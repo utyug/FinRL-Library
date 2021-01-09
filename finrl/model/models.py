@@ -75,10 +75,12 @@ class DRLAgent:
             action, _states = model.predict(test_obs)
             test_obs, rewards, dones, info = test_env.step(action)
             if i == (len(test_data.index.unique()) - 2):
-                account_memory = test_env.env_method(method_name="save_asset_memory")
-                actions_memory = test_env.env_method(method_name="save_action_memory")
+#                 account_memory = test_env.env_method(method_name="save_asset_memory")
+                account_memory = test_env.save_asset_memory()
+#                 actions_memory = test_env.env_method(method_name="save_action_memory")
+                actions_memory = test_env.save_action_memory()
         end = time.time()
-        return account_memory[0], actions_memory[0]
+        return account_memory, actions_memory ## boris
 
     def __init__(self, env):
         self.env = env

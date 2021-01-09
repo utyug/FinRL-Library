@@ -32,7 +32,7 @@ class StockTradingEnv(gym.Env):
         self.stock_dim = stock_dim
         self.hmax = hmax
         self.initial_amount = initial_amount
-        self.transaction_cost_pct =transaction_cost_pct
+        self.transaction_cost_pct = transaction_cost_pct
         self.reward_scaling = reward_scaling
         self.state_space = state_space
         self.action_space = action_space
@@ -57,66 +57,53 @@ class StockTradingEnv(gym.Env):
         self.asset_memory = [self.initial_amount]
         self.rewards_memory = []
         self.actions_memory=[]
+        self.actions_memory_=[] ## boris
         self.date_memory=[self._get_date()]
         #self.reset()
         self._seed()
+        self.actions_ = []
 
 
     def _sell_stock(self, index, action):
-        # perform sell action based on the sign of the action
-        if self.turbulence_threshold is not None:
-            if self.turbulence>self.turbulence_threshold:
-                # if turbulence goes over threshold, just clear out all positions 
-                if self.state[index+self.stock_dim+1] > 0:
-                    #update balance
-                    self.state[0] += self.state[index+1]*self.state[index+self.stock_dim+1]* \
-                                (1- self.transaction_cost_pct)
-                    self.state[index+self.stock_dim+1] =0
-                    self.cost += self.state[index+1]*self.state[index+self.stock_dim+1]* \
-                                self.transaction_cost_pct
-                    self.trades+=1
-                else:
-                    pass
+
+        price = self.state[index+1]
+        quantity = self.state[index+self.stock_dim+1]   
+
+        if (self.turbulence_threshold is None) or (self.turbulence < self.turbulence_threshold):
+            sell_quantity = min(abs(action), quantity)                 
         else:
-            # perform sell action based on the sign of the action
-            if self.state[index+self.stock_dim+1] > 0:
-                #update balance
-                self.state[0] += \
-                self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
-                (1- self.transaction_cost_pct)
-
-                self.state[index+self.stock_dim+1] -= min(abs(action), self.state[index+self.stock_dim+1])
-                self.cost +=self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
-                self.transaction_cost_pct
-                self.trades+=1
-            else:
-                pass
-
+            sell_quantity = quantity   # if turbulence goes over threshold, just clear out all positions                
+        
+        #update balance
+        # print(f'take sell action')
+        # print(f'price: {price:.2f}, sell_quantity: {sell_quantity:.2f}, money: {price * sell_quantity * (1 - self.transaction_cost_pct):.2f}')        
+        self.state[0] += price * sell_quantity * (1 - self.transaction_cost_pct)
+        self.state[index+self.stock_dim+1] -= sell_quantity
+        self.cost += price * sell_quantity * (self.transaction_cost_pct)
+        self.actions_memory_[-1][index] = - sell_quantity
+        self.trades += 1
 
     
     def _buy_stock(self, index, action):
 
-        def _do_buy():
-            available_amount = self.state[0] // self.state[index+1]
-            # print('available_amount:{}'.format(available_amount))
-            
-            #update balance
-            self.state[0] -= self.state[index+1]*min(available_amount, action)* \
-                              (1+ self.transaction_cost_pct)
-
-            self.state[index+self.stock_dim+1] += min(available_amount, action)
-            
-            self.cost+=self.state[index+1]*min(available_amount, action)* \
-                              self.transaction_cost_pct
-            self.trades+=1
-        # perform buy action based on the sign of the action
-        if self.turbulence_threshold is None:
-            _do_buy()
+        price = self.state[index+1]
+        quantity = self.state[index+self.stock_dim+1]            
+        
+        if (self.turbulence_threshold is None) or (self.turbulence < self.turbulence_threshold):                        
+            available_quantity = self.state[0] // price    
+            buy_quantity = min(available_quantity, action)
         else:
-            if self.turbulence< self.turbulence_threshold:
-                _do_buy()
-            else:
-                pass
+            buy_quantity = 0   # if turbulence goes over threshold, just don't buy
+
+        #update balance
+        # print(f'take buy action')
+        # print(f'price: {price:.2f}, buy_quantity: {buy_quantity:.2f}, money: {price * buy_quantity * (1 + self.transaction_cost_pct):.2f}') 
+        self.state[0] -= price * buy_quantity * (1 + self.transaction_cost_pct)
+        self.state[index+self.stock_dim+1] += buy_quantity
+        self.cost += price * buy_quantity * self.transaction_cost_pct
+        self.actions_memory_[-1][index] = buy_quantity
+        self.trades += 1
+
 
     def _make_plot(self):
         plt.plot(self.asset_memory,'r')
@@ -155,14 +142,17 @@ class StockTradingEnv(gym.Env):
         else:
 
             actions = actions * self.hmax
+            actions = actions.flatten().astype(int) ## boris
             self.actions_memory.append(actions)
-            #actions = (actions.astype(int))
+            self.actions_memory_.append(actions * 0) ## boris
             if self.turbulence_threshold is not None:
                 if self.turbulence>=self.turbulence_threshold:
                     actions=np.array([-self.hmax]*self.stock_dim)
             begin_total_asset = self.state[0]+ \
             sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
-            #print("begin_total_asset:{}".format(begin_total_asset))
+#             print("begin_total_asset:{}".format(begin_total_asset))  
+            # print("=========")
+            # print(f'begin money: {self.state[0]:.2f}')
             
             argsort_actions = np.argsort(actions)
             
@@ -170,21 +160,25 @@ class StockTradingEnv(gym.Env):
             buy_index = argsort_actions[::-1][:np.where(actions > 0)[0].shape[0]]
 
             for index in sell_index:
-                # print('take sell action'.format(actions[index]))
+#                 print('take sell action'.format(actions[index]))
                 self._sell_stock(index, actions[index])
 
             for index in buy_index:
-                # print('take buy action: {}'.format(actions[index]))
+#                 print('take buy action: {}'.format(actions[index]))
                 self._buy_stock(index, actions[index])
+    
+            # print(f'end money: {self.state[0]:.2f}')
 
             self.day += 1
             self.data = self.df.loc[self.day,:]    
             if self.turbulence_threshold is not None:     
                 self.turbulence = self.data['turbulence'].values[0]
             self.state =  self._update_state()
-                           
+            
             end_total_asset = self.state[0]+ \
             sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+            
+#             print("end_total_asset:{}".format(end_total_asset))
             self.asset_memory.append(end_total_asset)
             self.date_memory.append(self._get_date())
             self.reward = end_total_asset - begin_total_asset            
@@ -267,14 +261,14 @@ class StockTradingEnv(gym.Env):
             df_date = pd.DataFrame(date_list)
             df_date.columns = ['date']
             
-            action_list = self.actions_memory
+            action_list = self.actions_memory_ ## boris
             df_actions = pd.DataFrame(action_list)
             df_actions.columns = self.data.tic.values
             df_actions.index = df_date.date
             #df_actions = pd.DataFrame({'date':date_list,'actions':action_list})
         else:
             date_list = self.date_memory[:-1]
-            action_list = self.actions_memory
+            action_list = np.array(self.actions_memory_).flatten() ## boris
             df_actions = pd.DataFrame({'date':date_list,'actions':action_list})
         return df_actions
 
@@ -286,4 +280,4 @@ class StockTradingEnv(gym.Env):
     def get_sb_env(self):
         e = DummyVecEnv([lambda: self])
         obs = e.reset()
-        return e, obs
+        return self, obs ## boris

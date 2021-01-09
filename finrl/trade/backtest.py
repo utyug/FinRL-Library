@@ -16,7 +16,7 @@ def BackTestStats(account_value):
     perf_func = timeseries.perf_stats
     perf_stats_all = perf_func(
         returns=DRL_strat,
-        factor_returns=DRL_strat,
+        factor_returns=None,
         positions=None,
         transactions=None,
         turnover_denom="AGB",
@@ -95,6 +95,6 @@ def get_daily_return(df):
     sharpe = (252 ** 0.5) * df["daily_return"].mean() / df["daily_return"].std()
 
     annual_return = ((df["daily_return"].mean() + 1) ** 252 - 1) * 100
-    print("annual return: ", annual_return)
-    print("sharpe ratio: ", sharpe)
+    # print("annual return: ", annual_return)
+    # print("sharpe ratio: ", sharpe)
     return df
